@@ -1,10 +1,12 @@
 import fastify from 'fastify';
-import { z } from 'zod';
 import { createPoll } from './routes/create-poll';
-import { register } from 'module';
+import { getPoll } from './routes/get-poll';
+import { voteOnPoll } from './routes/vote-on-poll';
 
 const app = fastify();
 
 app.register(createPoll)
+app.register(getPoll)
+app.register(voteOnPoll)
 
 app.listen({port: 3333}).then(() => console.log('server running on port 3333'))
