@@ -1,20 +1,57 @@
+import { randomUUID } from "node:crypto";
 import { FastifyInstance } from "fastify";
-import { prisma } from "../../lib/prisma";
 import z from "zod";
+import { prisma } from "../../lib/prisma";
 
 export async function voteOnPoll(app: FastifyInstance) {
   app.post("/polls/:pollId/votes", async (request, reply) => {
     const voteOnPollBody = z.object({
-      pollOptionId: z.string().uuid()
+      pollOptionId: z.string().uuid(),
     });
 
     const voteOnPollParams = z.object({
-        pollId: z.string().uuid()
-      });
+      pollId: z.string().uuid(),
+    });
 
     const { pollOptionId } = voteOnPollBody.parse(request.body);
     const { pollId } = voteOnPollParams.parse(request.params);
 
-    return reply.status(201).send({});
+    let sessionId = request.cookies.sessionId;
+
+    if(sessionId) {
+        const userPreviouslyVoteOnPoll = await prisma.vote.findUnique({
+            where: {
+                sessionId_pollId: { // verifica a restrição de voto do usuário numa mesma enquete
+                    sessionId, pollId
+                }
+            }
+        })
+        if(userPreviouslyVoteOnPoll && userPreviouslyVoteOnPoll.pollOptionId != pollOptionId) {
+            await prisma.vote.delete({
+                where: {
+                    id: userPreviouslyVoteOnPoll.id
+                }
+            })
+        } else if (userPreviouslyVoteOnPoll) {
+            return reply.status(400).send({ message: 'You already vote on this poll' })
+        }
+    }
+
+    if (!sessionId) {
+      sessionId = randomUUID();
+
+      reply.setCookie("sessionId", sessionId, {
+        path: "/", // Disponível em toda a aplicação
+        maxAge: 60 * 60 * 24 * 30, // Duração
+        signed: true, // Assinado
+        httpOnly: true, // Acessível apenas pelo nosso backend
+      });
+    }
+
+    await prisma.vote.create({ data: {
+        sessionId, pollId, pollOptionId
+    } })
+
+    return reply.status(201).send();
   });
 }
